@@ -225,3 +225,10 @@ Sname1 VARCHAR2(16)
 
 SPOOL OFF
 
+
+main_rollup_install_TABLE.sql
+SPOOL main_rollup_install_TABLE.log
+
+SPOOL main_rollup_ROLLBACK_TABLE.log
+
+
