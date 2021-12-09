@@ -1,0 +1,227 @@
+PROMPT  ============================================================================
+PROMPT  Welcome to the Installation setup process. Your assistance in preparing the 
+PROMPT  Deployment setup for the May 2020 Release is very much appreciated.
+PROMPT  
+PROMPT  You will be asked/Prompted to assign several variable Values. 
+PROMPT  Press ENTER following each reply.
+PROMPT
+PROMPT  You may abort this script at any time by pressing the CONTROL C keys.
+PROMPT
+PROMPT  Regardless of your answers, this procedure will not make any destructive
+PROMPT  changes to your database. 
+PROMPT  ============================================================================
+PROMPT       
+
+  /**************************************************************************  
+   * Copyright (c) 2008-2009 ABCD LABORATORIES  
+   * All Rights Reserved  
+   * This work contains trade secrets and confidential material of  
+   * ABCD LABORATORIES., and its use of disclosure in whole or in part  
+   * without express written permission of ABCD LABORATORIES is Prohibited.  
+   *  
+   * Company              : ABCD LABORATORIES  
+   * Project              : ABCD SCORPION  
+   * File Name            : File name is deployment_owner_param.sql  
+   * Description          : This File is intended to deployment for May 2020 RELEASE.  
+   *                        This is for total 4 sprints DB Changes.  
+   * Run PROCEDURE		  : Execute from Oracle SQL*Plus as follows:
+						    SQL> @ SiderisClassIDs.SQL  
+    NOTES
+      Run this script as SYS - directories are owned by SYS
+
+    MODIFIED BY  (MM/DD/YY) DETAILS
+    dkapoor      08/15/06 - call recreation of path for OCM dir object
+    tbgraves     05/21/04 - data_pump_dir added 
+    hyeh         08/29/02 - hyeh_mv_comschema_to_rdbms
+    ahunold      04/30/02 - no grants to public
+    ahunold      04/18/02 - create as SYS
+    ahunold      04/03/02 - bug 2290347
+    ahunold      08/28/01 - Merged ahunold_mk_dir
+    ahunold      08/28/01 - Created
+   ***************************************************************************/
+/*
+UNDEFINE General variables
+*/
+UNDEFINE PASSWORD
+UNDEFINE SERVICE
+UNDEFINE DBA
+UNDEFINE PREFIX
+UNDEFINE COUNT
+UNDEFINE TABLESPACE
+
+/*
+Deployment owner parameters General settings
+*/
+@@deployment_owner_param.sql
+/*
+Spoolig/Logging out deployment process to log file 
+*/
+spool install.log
+
+prompt &&line_separator
+prompt Installing deployment scripts  into &&deployment_owner schema
+prompt &&line_separator
+
+whenever sqlerror exit failure rollback
+whenever oserror exit failure rollback
+
+prompt Switching current schema to &&deployment_owner
+prompt &&line_separator
+alter session set current_schema = &&deployment_owner;
+
+/*
+Checking out System Priviliges in deployment owner schema
+*/
+@@check_object_grants.sql
+@@check_sys_grants.sql "'CREATE TYPE','CREATE VIEW','CREATE SYNONYM','CREATE SEQUENCE','CREATE PROCEDURE','CREATE TABLE', 'CREATE CONTEXT'"
+
+SELECT
+   LOWER(SYS_CONTEXT('USERENV','CURRENT_USER')) || '@' ||
+   SYS_CONTEXT('USERENV','DB_NAME'     )||':'||
+   SYS_CONTEXT('USERENV','SERVICE_NAME')||':'||
+   SYS_CONTEXT('userenv', 'instance_name')   
+as
+   sqlprompt
+from
+   dual;  
+ALTER SESSION SET NLS_DATE_FORMAT='DD-MON-YYYY HH24:MI:SS'; 
+ALTER SESSION SET NLS_TIMESTAMP_FORMAT='DD-MON-YYYY HH24:MI:SS.FF'; 
+SELECT SYSDATE, SYSTIMESTAMP FROM Dual;
+
+--expectations execution state interface
+@@install_component.sql 'core/ut_expectation_processor.pks'
+@@install_component.sql 'core/ut_expectation_processor.pkb'
+
+prompt Installing PLSQL profiler objects into &&ut3_owner schema
+@@core/coverage/proftab.sql
+
+prompt Installing PLSQL profiler objects into &&ut3_owner schema
+@@core/coverage/proftab.sql
+
+prompt Installing DBMSPLSQL Tables objects into &&ut3_owner schema
+@@core/coverage/dbms_plssqlcode.sql
+
+@@install_component.sql 'core/ut_file_mapper.pks'
+@@install_component.sql 'core/ut_file_mapper.pkb'
+
+--core reporter
+@@install_component.sql 'reporters/ut_documentation_reporter.tps'
+@@install_component.sql 'reporters/ut_documentation_reporter.tpb'
+
+--plugin interface API for running utPLSQL
+@@install_component.sql 'api/ut_runner.pks'
+@@install_component.sql 'api/ut_runner.pkb'
+
+--developer interface for expectations and running utPLSQL
+@@install_component.sql 'api/ut.pks'
+@@install_component.sql 'api/ut.pkb'
+
+--additional reporters
+@@install_component.sql 'reporters/ut_debug_reporter.tps'
+@@install_component.sql 'reporters/ut_debug_reporter.tpb'
+
+
+
+SET linesize 200
+SET define ON
+COLUMN text FORMAT a100
+COLUMN error_count noprint new_value error_count
+
+PROMPT Validating installation
+PROMPT &&line_separator
+SET heading ON
+SELECT type, name, sequence, line, position, text, COUNT(1) OVER() error_count
+  FROM all_errors
+ WHERE owner = UPPER('&&deployment_owner')
+   AND name NOT LIKE 'BIN$%'  --not recycled
+   AND (name = 'UT' OR name LIKE 'UT\_%' ESCAPE '\')
+   AND attribute = 'ERROR'  --errors only. ignore warnings
+ ORDER BY name, type, sequence
+/
+
+BEGIN
+  IF TO_NUMBER('&&error_count') > 0 then
+    RAISE_APPLICATION_ERROR(-20000, 'Not all sources were successfully installed.');
+  ELSE
+    dbms_output.put_line('Installation completed successfully');
+    dbms_output.put_line('&&line_separator');
+  END IF;
+END;
+/
+
+SPOOL OFF
+
+SET DEFINE OFF
+--Even if COMMMENT & operator that time also It will ask INPUT Value.
+SET ECHO OFF
+SET SQLBLANKLINES ON    
+-- OFF This is the default setting and doesn’t allow a SQL statement to have embedded blank lines. ON  --> Turns on the feature and allows you to enter a SQL statement with an embedded blank line.
+--SP2-0027: Input is too long (> 2499 characters) - line ignored, 
+---> To ignore above kind of Error(SP2-0027) better to FORMAT(CTRL+F7-SQL Developer) the Code/SELECT statement for ONE column/Expression per line. LINESIZE, PAGESIZE won't help this kind of Error,
+---> PAGESIZE and LINESIXE for OUTPUT data size but SP2-0027 is INPUT data size of SQLPLUS
+--WHENEVER SQLERROR 
+--				 {
+--					EXIT [SUCCESS|FAILURE|WARNING|n|variable|:BindVariable][COMMIT|ROLLBACK] -->DEFAULT Option COMMIT EXIT, If need ROLLBAK then need to Explicitly declare ROLLBACK END of WHENEVR STATEMENT
+--					| 
+--					CONTINUE [COMMIT|ROLLBACK|NONE]  ---> DEFAULT Option 
+--				 }			 
+--where:
+--you must choose the EXIT or CONTINUE statement
+--the block [SUCCESS|FAILURE|WARNING|n|variable|:BindVariable] define the exit code that can be:
+--SUCCESS (default)
+--FAILURE
+--WARNING
+--n: an integer
+--a variable
+--a bind variable
+--the block [COMMIT|ROLLBACK] defines the transaction termination action to do. --> DEFAULT is COMMIT
+
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
+WHENEVER OSERROR EXIT 68;
+
+SPOOL "ANIL_BUILD_INSTAL_DEPLOYMENT.log";
+--Switching to a Different Schema, All Subsequent statements EXECUTE using 'SCOTT' Schema
+ALTER SESSION SET CURRENT_SCHEMA = SCOTT; 
+----**Creating Database Objects in a Foreign Schema**--
+--http://what-when-how.com/Tutorial/topic-16mglm7e/Secrets-of-the-Oracle-Database-175.html
+--Let's assume that a software developer working with the account HR needs a large quantity of new tables for testing purposes.
+--The database user HR does not have the privilege CREATE TABLE, since the developer is only allowed to work with existing tables in the schema HR. 
+--Thus, the developer is unable to create the tables in schema HR himself.
+--The developer sent a script for creating the tables, but the database object names in the script are not prefixed by a schema name.
+--This scenario is an example for putting the ALTER SESSION SET CURRENT_SCHEMA statement to use. 
+--Without the statement, one of the following solutions must be chosen:
+--	1. The DBA has to temporarily grant CREATE TABLE to the database user HR, such that the developer can create the tables himself.
+--	2. The DBA has to ask the developer to prefix each and every object name in the script with the schema name HR, such that the DBA can run the script.
+--	3. The DBA may run the script unchanged by leveraging CURRENT_SCHEMA. 
+--Below is a single CREATE TABLE statement executed after ALTER SESSION SET CURRENT_SCHEMA. 
+--The example illus-trates that database objects are created under the parsing schema identifier, not the privilege schema identifier.
+--SQL> SHOW USERUSER is "SYSTEM"
+--SQL> ALTER SESSION SET current_schema=hr;Session altered.
+--SQL> CREATE TABLE country (    country_id char(2),    country_name varchar2(40),    region_id number,   
+-- CONSTRAINT pk_country PRIMARY KEY (country_id));
+--Table created.
+--SQL> SELECT owner, object_type FROM dba_objects 
+--WHERE object_name IN ('COUNTRY', 'PK_COUNTRY');
+
+PROMPT
+PROMPT "SELECT DUAL"
+PROMPT
+ SELECT 
+'Anil' col1, 'ANIL2' colr, 'ANIL3' col3
+ FROM Dual
+ /
+
+PROMPT  "DROP  TABLE SCOTT.Smp_11"
+DROP  TABLE SCOTT.Smp_11
+/
+PROMPT "CREATE TABLE SCOTT.Smp_11"
+CREATE TABLE SCOTT.Smp_11
+(
+Sname1 VARCHAR2(16)
+,id  NUMBER(5)
+,hire_date DATE
+)
+/
+
+SPOOL OFF
+
